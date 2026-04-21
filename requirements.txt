@@ -1,5 +1,4 @@
 whisperx
-whisper
 pyannote.audio
 langchain-core
 langgraph
@@ -9,3 +8,4 @@ pydantic>=2.0
 fastapi
 uvicorn
 gradio
+langchain-groq
