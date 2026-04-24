@@ -78,5 +78,4 @@ def assemble_report(state: MeetingState) -> MeetingState:
     print(f"  decisions       : {len(report.decision)}")
     print(f"  summary length  : {len(report.summary.split())} words")
  
-    state["final_report"] = report
-    return state
+    return {"final_report": report}

@@ -51,8 +51,7 @@ def clean_transcript(state:MeetingState)->MeetingState:
     labelled_transcript=state.get("labelled_transcript","")
     if not labelled_transcript.strip():
         print("Cleaner: transcript is empty, skipping.")
-        state["clean_transcript"] = ""
-        return state
+        return {"clean_transcript": ""}
 
     print("Cleaner: cleaning transcript...")
 
@@ -71,7 +70,6 @@ def clean_transcript(state:MeetingState)->MeetingState:
           f"Original {len(labelled_transcript)} chars → "
           f"Cleaned {len(clean)} chars.")
  
-    state["clean_transcript"] = clean
-    return state
+    return {"clean_transcript": clean}
     
     

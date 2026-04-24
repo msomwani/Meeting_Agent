@@ -46,8 +46,7 @@ def extract_action_items(state:MeetingState)->MeetingState:
 
     if not clean_transcript:
         print("Extractor: clean_transcript is empty, skipping.")
-        state["action_items"] = []
-        return state
+        return {"action_items": []}
     
     print("Extractor: Extracting action items...")
 
@@ -80,11 +79,10 @@ def extract_action_items(state:MeetingState)->MeetingState:
                 print(f"Extractor: skipping invalid item — {e}")
  
         print(f"Extractor: done. Found {len(validated)} action item(s).")
-        state["action_items"] = validated
- 
+
     except json.JSONDecodeError as e:
         print(f"Extractor: JSON parse error — {e}")
         print(f"Extractor: raw response was: {raw[:300]}")
-        state["action_items"] = []
+        return {"action_items": []}
  
-    return state
+    return {"action_items": validated}

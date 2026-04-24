@@ -48,8 +48,7 @@ def extract_decisions(state:MeetingState)->MeetingState:
 
     if not clean_transcript:
         print("Decisions: clean_transcript is empty, skipping.")
-        state["decisions"] = []
-        return state
+        return {"decisions": []}
  
     print("Decisions: extracting decisions...")
  
@@ -81,11 +80,10 @@ def extract_decisions(state:MeetingState)->MeetingState:
                 print(f"Decisions: skipping invalid item — {e}")
  
         print(f"Decisions: done. Found {len(validated)} decision(s).")
-        state["decisions"] = validated
- 
+
     except json.JSONDecodeError as e:
         print(f"Decisions: JSON parse error — {e}")
         print(f"Decisions: raw response was: {raw[:300]}")
-        state["decisions"] = []
- 
-    return state
+        return {"decisions": []}
+
+    return {"decisions": validated}

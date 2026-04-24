@@ -59,8 +59,7 @@ def summarise_meeting(state:MeetingState)->MeetingState:
     
     if not clean_transcript:
         print("Summarizer: clean_transcript is empty,skipping")
-        state["summary"]="No transcript avialabel to summarize"
-        return state
+        return {"summary": "No transcript available to summarise."}
 
     speaker_profiles=state.get("speaker_profiles",[])
     duration_seconds=state.get("duration_seconds",0.0)
@@ -85,6 +84,4 @@ def summarise_meeting(state:MeetingState)->MeetingState:
  
     print(f"Summariser: done. Summary is {len(summary.split())} words.")
  
-    state["summary"] = summary
-    return state
- 
+    return {"summary": summary}
