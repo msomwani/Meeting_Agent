@@ -5,3 +5,5 @@ outputs/
 audio/
 .DS_Store
 .venv/
+meetmind.db
+test_*.py

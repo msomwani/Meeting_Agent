@@ -1,35 +1,15 @@
-/**
- * offscreen.js
- *
- * Runs inside the offscreen document — survives full meeting duration.
- *
- * Responsibilities:
- *   1. Receives START_CAPTURE with a streamId from background.js
- *   2. Opens the media stream using the streamId (tabCapture audio)
- *   3. Connects a WebSocket to ws://localhost:8000/ws/audio
- *   4. Streams raw PCM audio chunks to the WebSocket
- *   5. On STOP_CAPTURE: sends "STOP" text message to WebSocket
- *   6. Waits for the report JSON from the server
- *   7. Sends REPORT_READY or ERROR back to background.js
- *
- * Audio pipeline inside this file:
- *   MediaStream (tabCapture)
- *     → AudioContext
- *     → ScriptProcessorNode (captures raw PCM float32)
- *     → Convert to Int16 PCM
- *     → Send as binary over WebSocket
- */
-
 const WEBSOCKET_URL = "ws://localhost:8000/ws/audio";
 
-let mediaStream    = null;
-let audioContext   = null;
-let processorNode  = null;
-let websocket      = null;
-let isRecording    = false;
+let mediaStream       = null;
+let audioContext      = null;
+let processorNode     = null;
+let destinationNode   = null;   // for speaker playback
+let speakerAudio      = null;   // <audio> element for playback
+let websocket         = null;
+let isRecording       = false;
 
 // ---------------------------------------------------------------------------
-// Message handler — receives from background.js
+// Message handler
 // ---------------------------------------------------------------------------
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -41,7 +21,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendError(`Capture failed: ${err.message}`);
         sendResponse({ ok: false });
       });
-    return true; // async response
+    return true;
   }
 
   if (message.type === "STOP_CAPTURE") {
@@ -56,12 +36,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // ---------------------------------------------------------------------------
 
 async function startCapture(streamId) {
-  // Open the tab audio stream using the streamId from background.js
-  // getUserMedia with chromeMediaSource + streamId is the Manifest V3 way
+  // Open tab audio stream
   mediaStream = await navigator.mediaDevices.getUserMedia({
     audio: {
       mandatory: {
-        chromeMediaSource: "tab",
+        chromeMediaSource:   "tab",
         chromeMediaSourceId: streamId,
       },
     },
@@ -73,13 +52,14 @@ async function startCapture(streamId) {
   websocket.binaryType = "arraybuffer";
 
   await new Promise((resolve, reject) => {
-    websocket.onopen = resolve;
-    websocket.onerror = () => reject(new Error("WebSocket connection failed. Is the MeetMind server running?"));
-    // Timeout after 5 seconds
+    websocket.onopen  = resolve;
+    websocket.onerror = () => reject(new Error(
+      "WebSocket connection failed. Is the MeetMind server running on port 8000?"
+    ));
     setTimeout(() => reject(new Error("WebSocket connection timed out")), 5000);
   });
 
-  // Wait for server ready message
+  // Wait for server ready signal
   await new Promise((resolve, reject) => {
     websocket.onmessage = (event) => {
       try {
@@ -89,42 +69,65 @@ async function startCapture(streamId) {
           resolve();
         }
       } catch {
-        reject(new Error("Unexpected server message"));
+        reject(new Error("Unexpected server message during handshake"));
       }
     };
     setTimeout(() => reject(new Error("Server did not send ready signal")), 5000);
   });
 
-  // Set up WebSocket message handler for the report
+  // Set up ongoing WebSocket message handler (for report after STOP)
   websocket.onmessage = handleServerMessage;
   websocket.onerror   = () => sendError("WebSocket error during recording.");
   websocket.onclose   = () => {
-    if (isRecording) {
-      sendError("WebSocket closed unexpectedly during recording.");
-    }
+    if (isRecording) sendError("WebSocket closed unexpectedly.");
   };
 
-  // Set up audio processing
-  audioContext  = new AudioContext({ sampleRate: 48000 });
-  const source  = audioContext.createMediaStreamSource(mediaStream);
+  // ── Audio graph ──────────────────────────────────────────────────────────
+  audioContext = new AudioContext({ sampleRate: 48000 });
+  const source = audioContext.createMediaStreamSource(mediaStream);
 
-  // ScriptProcessorNode: bufferSize 4096, 1 input channel, 1 output channel
-  // Deprecated but still the most reliable cross-platform approach for raw PCM
+  // Branch 1 — capture branch → WebSocket
   processorNode = audioContext.createScriptProcessor(4096, 1, 1);
-
   processorNode.onaudioprocess = (event) => {
     if (!isRecording || !websocket || websocket.readyState !== WebSocket.OPEN) return;
-
     const float32 = event.inputBuffer.getChannelData(0);
     const int16   = float32ToInt16(float32);
     websocket.send(int16.buffer);
   };
 
+  // Branch 2 — playback branch → speakers
+  // MediaStreamDestinationNode creates a new MediaStream from the audio graph
+  // which we feed into an <audio> element so the user still hears the call
+  destinationNode = audioContext.createMediaStreamDestination();
+
+  // Wire both branches from the same source
   source.connect(processorNode);
-  processorNode.connect(audioContext.destination);
+  source.connect(destinationNode);
+
+  // ScriptProcessor needs to connect to destination to stay active
+  // but we use a gain node set to 0 so it doesn't double-play
+  const silentGain = audioContext.createGain();
+  silentGain.gain.value = 0;
+  processorNode.connect(silentGain);
+  silentGain.connect(audioContext.destination);
+
+  // Play the audio through speakers via an <audio> element
+  speakerAudio = new Audio();
+  speakerAudio.srcObject = destinationNode.stream;
+  speakerAudio.volume    = 1.0;
+
+  // Autoplay requires user gesture — in offscreen context this is allowed
+  // because the offscreen document was created in response to user action
+  try {
+    await speakerAudio.play();
+    console.log("MeetMind: speaker playback started.");
+  } catch (err) {
+    // Non-fatal — recording still works, user just won't hear audio
+    console.warn("MeetMind: speaker playback failed (non-fatal):", err.message);
+  }
 
   isRecording = true;
-  console.log("MeetMind: recording started.");
+  console.log("MeetMind: recording started with audio split.");
 }
 
 // ---------------------------------------------------------------------------
@@ -133,28 +136,41 @@ async function startCapture(streamId) {
 
 function stopCapture() {
   if (!isRecording) return;
-
   isRecording = false;
+
   console.log("MeetMind: stopping capture, sending STOP to server…");
+
+  // Stop speaker playback
+  if (speakerAudio) {
+    speakerAudio.pause();
+    speakerAudio.srcObject = null;
+    speakerAudio = null;
+  }
 
   // Disconnect audio nodes
   if (processorNode) {
     processorNode.disconnect();
     processorNode = null;
   }
+  if (destinationNode) {
+    destinationNode.disconnect();
+    destinationNode = null;
+  }
   if (audioContext) {
     audioContext.close();
     audioContext = null;
   }
+
+  // Stop media tracks
   if (mediaStream) {
     mediaStream.getTracks().forEach(track => track.stop());
     mediaStream = null;
   }
 
-  // Send STOP signal to server — triggers pipeline
+  // Signal server to run pipeline
   if (websocket && websocket.readyState === WebSocket.OPEN) {
     websocket.send("STOP");
-    // Keep WebSocket open — server will send back the report
+    // Keep WebSocket open — server sends report back
   }
 }
 
@@ -197,10 +213,6 @@ function handleServerMessage(event) {
 // ---------------------------------------------------------------------------
 
 function float32ToInt16(float32Array) {
-  /**
-   * Converts Float32 PCM (range -1 to 1) to Int16 PCM.
-   * WebSocket sends the raw Int16 buffer — main.py reassembles it into WAV.
-   */
   const int16 = new Int16Array(float32Array.length);
   for (let i = 0; i < float32Array.length; i++) {
     const clamped = Math.max(-1, Math.min(1, float32Array[i]));

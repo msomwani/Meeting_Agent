@@ -1,27 +1,28 @@
 /**
  * background.js — Service Worker
  *
- * Manages the recording lifecycle.
- * Service workers shut down after ~30s of inactivity, so audio capture
- * lives in the offscreen document (offscreen.js), not here.
+ * Owns the recording lifecycle completely.
+ * Popup is just a display — it reads state, sends commands, then can close.
+ * Recording continues in offscreen.js regardless of popup being open or not.
  *
- * This file:
- *   - Receives messages from popup.js
- *   - Creates/destroys the offscreen document
- *   - Forwards START/STOP to offscreen.js
- *   - Forwards report/error back to popup.js
- *   - Tracks global state so popup can sync on open
+ * Key behaviours:
+ *   - chrome.storage.session persists state across popup open/close cycles
+ *   - Keep-alive ping every 20s prevents service worker shutdown mid-meeting
+ *   - Recording start time saved so popup timer resumes correctly on reopen
  */
 
-// Global state — persists as long as service worker is alive
-let currentState  = "idle";
+// In-memory state (fast access while service worker is alive)
+let currentState   = "idle";
 let currentMessage = "";
 let lastMeetingId  = null;
+
+// Keep service worker alive during recording
+let keepAliveInterval = null;
 
 const OFFSCREEN_URL = chrome.runtime.getURL("offscreen.html");
 
 // ---------------------------------------------------------------------------
-// State helpers
+// State — written to session storage so popup can read on reopen
 // ---------------------------------------------------------------------------
 
 function updateState(state, message = "", meetingId = null) {
@@ -29,15 +30,39 @@ function updateState(state, message = "", meetingId = null) {
   currentMessage = message;
   if (meetingId) lastMeetingId = meetingId;
 
-  // Broadcast to popup if it's open
+  chrome.storage.session.set({
+    meetmind_state:     state,
+    meetmind_message:   message,
+    meetmind_meetingId: meetingId || lastMeetingId || null,
+  });
+
+  // Broadcast to popup if open — fails silently if closed
   chrome.runtime.sendMessage({
     type:      "STATE_UPDATE",
     state,
     message,
     meetingId: lastMeetingId,
-  }).catch(() => {
-    // Popup might be closed — that's fine
-  });
+  }).catch(() => {});
+}
+
+// ---------------------------------------------------------------------------
+// Keep-alive — prevents Chrome killing service worker during long meetings
+// ---------------------------------------------------------------------------
+
+function startKeepAlive() {
+  stopKeepAlive();
+  keepAliveInterval = setInterval(() => {
+    chrome.runtime.getPlatformInfo(() => {});
+  }, 20000);
+  console.log("MeetMind: keep-alive started.");
+}
+
+function stopKeepAlive() {
+  if (keepAliveInterval) {
+    clearInterval(keepAliveInterval);
+    keepAliveInterval = null;
+    console.log("MeetMind: keep-alive stopped.");
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -48,10 +73,11 @@ async function ensureOffscreenDocument() {
   const existing = await chrome.offscreen.hasDocument();
   if (!existing) {
     await chrome.offscreen.createDocument({
-      url:    OFFSCREEN_URL,
-      reasons: [chrome.offscreen.Reason.USER_MEDIA],
+      url:           OFFSCREEN_URL,
+      reasons:       [chrome.offscreen.Reason.USER_MEDIA],
       justification: "Capture meeting tab audio via tabCapture API",
     });
+    console.log("MeetMind: offscreen document created.");
   }
 }
 
@@ -59,85 +85,88 @@ async function closeOffscreenDocument() {
   const exists = await chrome.offscreen.hasDocument();
   if (exists) {
     await chrome.offscreen.closeDocument();
+    console.log("MeetMind: offscreen document closed.");
   }
 }
 
 // ---------------------------------------------------------------------------
-// Message handler — receives from popup.js and offscreen.js
+// Message handler
 // ---------------------------------------------------------------------------
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
-  // --- Popup requests current state ---
+  // Popup opened — return persisted state
   if (message.type === "GET_STATE") {
-    sendResponse({
-      state:     currentState,
-      message:   currentMessage,
-      meetingId: lastMeetingId,
-    });
+    chrome.storage.session.get(
+      ["meetmind_state", "meetmind_message", "meetmind_meetingId"],
+      (stored) => {
+        sendResponse({
+          state:     stored.meetmind_state     || currentState,
+          message:   stored.meetmind_message   || currentMessage,
+          meetingId: stored.meetmind_meetingId || lastMeetingId,
+        });
+      }
+    );
     return true;
   }
 
-  // --- Popup: start recording ---
+  // Popup: start recording
   if (message.type === "START_RECORDING") {
     handleStartRecording(message.tabId);
     sendResponse({ ok: true });
     return true;
   }
 
-  // --- Popup: stop recording ---
+  // Popup: stop recording
   if (message.type === "STOP_RECORDING") {
     handleStopRecording();
     sendResponse({ ok: true });
     return true;
   }
 
-  // --- Offscreen: pipeline is processing ---
+  // Offscreen: pipeline running
   if (message.type === "PROCESSING") {
     updateState("processing", "Running AI pipeline…");
     return true;
   }
 
-  // --- Offscreen: report is ready ---
+  // Offscreen: report ready
   if (message.type === "REPORT_READY") {
+    stopKeepAlive();
     const meetingId = message.meetingId;
     updateState("done", "✅ Report ready!", meetingId);
-
-    // Also send specific REPORT_READY so popup can show view button
     chrome.runtime.sendMessage({
-      type:      "REPORT_READY",
-      meetingId: meetingId,
+      type: "REPORT_READY", meetingId,
     }).catch(() => {});
-
     closeOffscreenDocument();
     return true;
   }
 
-  // --- Offscreen: error ---
+  // Offscreen: error
   if (message.type === "ERROR") {
-    updateState("error", message.message || "Pipeline error.");
-    chrome.runtime.sendMessage({
-      type:    "ERROR",
-      message: message.message,
-    }).catch(() => {});
+    stopKeepAlive();
+    const msg = message.message || "Pipeline error.";
+    updateState("error", msg);
+    chrome.runtime.sendMessage({ type: "ERROR", message: msg }).catch(() => {});
     closeOffscreenDocument();
     return true;
   }
 });
 
 // ---------------------------------------------------------------------------
-// Start recording flow
+// Start recording
 // ---------------------------------------------------------------------------
 
 async function handleStartRecording(tabId) {
   try {
     updateState("recording", "Recording in progress…");
+    startKeepAlive();
 
-    // Create offscreen document first
+    // Save start time so popup timer can resume correctly on reopen
+    chrome.storage.session.set({ meetmind_recording_start: Date.now() });
+
     await ensureOffscreenDocument();
 
-    // Get a tabCapture stream ID for the target tab
-    // This must be called from background.js — not from offscreen
     const streamId = await new Promise((resolve, reject) => {
       chrome.tabCapture.getMediaStreamId(
         { targetTabId: tabId },
@@ -151,27 +180,31 @@ async function handleStartRecording(tabId) {
       );
     });
 
-    // Send stream ID to offscreen.js — it will open the media stream
     await chrome.runtime.sendMessage({
       type:     "START_CAPTURE",
       streamId: streamId,
     });
 
+    console.log("MeetMind: recording started for tab", tabId);
+
   } catch (err) {
-    console.error("Start recording error:", err);
+    console.error("MeetMind: start recording error:", err);
+    stopKeepAlive();
+    chrome.storage.session.remove("meetmind_recording_start");
     updateState("error", `Failed to start: ${err.message}`);
     await closeOffscreenDocument();
   }
 }
 
 // ---------------------------------------------------------------------------
-// Stop recording flow
+// Stop recording
 // ---------------------------------------------------------------------------
 
 async function handleStopRecording() {
+  console.log("MeetMind: stopping recording…");
+  chrome.storage.session.remove("meetmind_recording_start");
   updateState("processing", "Processing recording…");
 
-  // Tell offscreen.js to stop and send STOP to the WebSocket
+  // Tell offscreen.js to stop — result comes back as REPORT_READY or ERROR
   await chrome.runtime.sendMessage({ type: "STOP_CAPTURE" }).catch(() => {});
-  // offscreen.js will send REPORT_READY or ERROR back when done
 }

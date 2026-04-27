@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MeetMind — Report</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg:        #080c14;
+      --surface:   #0f1520;
+      --border:    #1a2236;
+      --accent:    #6366f1;
+      --accent2:   #8b5cf6;
+      --green:     #22c55e;
+      --amber:     #f59e0b;
+      --red:       #ef4444;
+      --text:      #e2e8f0;
+      --muted:     #64748b;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'IBM Plex Sans', sans-serif;
+      min-height: 100vh;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+      background-size: 40px 40px;
+      opacity: 0.4;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .wrap { position: relative; z-index: 1; max-width: 860px; margin: 0 auto; padding: 0 24px 60px; }
+
+    /* ── Nav ── */
+    nav {
+      border-bottom: 1px solid var(--border);
+      background: rgba(8,12,20,0.9);
+      backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .nav-inner {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 0 24px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+      text-decoration: none;
+    }
+
+    .logo-icon {
+      width: 30px;
+      height: 30px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+    }
+
+    .back-btn {
+      font-size: 13px;
+      color: var(--muted);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: color 0.15s;
+    }
+    .back-btn:hover { color: var(--text); }
+
+    /* ── Report header ── */
+    .report-header {
+      padding: 40px 0 28px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 32px;
+    }
+
+    .report-label {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      color: var(--accent);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+
+    .report-filename {
+      font-size: 24px;
+      font-weight: 500;
+      color: var(--text);
+      margin-bottom: 12px;
+      word-break: break-word;
+    }
+
+    .report-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+
+    .meta-item {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .meta-item strong { color: var(--text); }
+
+    /* ── Sections ── */
+    .section { margin-bottom: 28px; }
+
+    .section-title {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* Summary */
+    .summary-text {
+      font-size: 15px;
+      line-height: 1.7;
+      color: var(--text);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 20px;
+    }
+
+    /* Speakers */
+    .speakers-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 10px;
+    }
+
+    .speaker-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+    }
+
+    .speaker-name {
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 4px;
+    }
+
+    .speaker-id {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 10px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .speaker-time {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 12px;
+      color: var(--accent);
+    }
+
+    /* Action items */
+    .action-list { display: flex; flex-direction: column; gap: 10px; }
+
+    .action-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 10px;
+      padding: 14px 16px;
+    }
+
+    .action-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 6px;
+    }
+
+    .action-task {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text);
+      line-height: 1.4;
+    }
+
+    .confidence-badge {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .conf-high   { background: rgba(34,197,94,0.1);  color: var(--green); border: 1px solid rgba(34,197,94,0.2); }
+    .conf-medium { background: rgba(245,158,11,0.1); color: var(--amber); border: 1px solid rgba(245,158,11,0.2); }
+    .conf-low    { background: rgba(239,68,68,0.1);  color: var(--red);   border: 1px solid rgba(239,68,68,0.2); }
+
+    .action-meta {
+      display: flex;
+      gap: 16px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .action-meta strong { color: var(--text); }
+
+    .action-quote {
+      font-size: 12px;
+      color: var(--muted);
+      font-style: italic;
+      border-left: 2px solid var(--border);
+      padding-left: 10px;
+      margin-top: 8px;
+    }
+
+    /* Decisions */
+    .decision-list { display: flex; flex-direction: column; gap: 10px; }
+
+    .decision-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent2);
+      border-radius: 10px;
+      padding: 14px 16px;
+    }
+
+    .decision-desc {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text);
+      margin-bottom: 8px;
+      line-height: 1.4;
+    }
+
+    .decision-meta {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .decision-meta strong { color: var(--text); }
+
+    .decision-rationale {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 8px;
+      line-height: 1.5;
+    }
+
+    /* Transcript */
+    .transcript-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 12px;
+      line-height: 1.8;
+      color: var(--muted);
+      max-height: 400px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .transcript-box::-webkit-scrollbar { width: 4px; }
+    .transcript-box::-webkit-scrollbar-track { background: transparent; }
+    .transcript-box::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .speaker-label { color: var(--accent); font-weight: 600; }
+
+    /* Empty state */
+    .empty-section {
+      font-size: 13px;
+      color: var(--muted);
+      font-style: italic;
+      padding: 12px 0;
+    }
+
+    /* Loading / error */
+    .loading, .error {
+      text-align: center;
+      padding: 80px 0;
+      color: var(--muted);
+    }
+
+    .spinner {
+      width: 24px; height: 24px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Copy markdown button */
+    .copy-btn {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 5px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+  </style>
+</head>
+<body>
+
+  <nav>
+    <div class="nav-inner">
+      <a class="logo" href="/dashboard">
+        <div class="logo-icon">🧠</div>
+        MeetMind
+      </a>
+      <a class="back-btn" href="/dashboard">← All meetings</a>
+    </div>
+  </nav>
+
+  <div class="wrap">
+    <div id="content">
+      <div class="loading">
+        <div class="spinner"></div>
+        Loading report…
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API = "http://localhost:8000";
+
+    function formatDate(iso) {
+      const d = new Date(iso);
+      return d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })
+        + " at " + d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+    }
+
+    function formatDuration(secs) {
+      if (!secs) return "—";
+      const m = Math.floor(secs / 60);
+      const s = Math.floor(secs % 60);
+      return m > 0 ? `${m}m ${s}s` : `${s}s`;
+    }
+
+    function confidenceClass(c) {
+      if (c === "high")   return "conf-high";
+      if (c === "medium") return "conf-medium";
+      return "conf-low";
+    }
+
+    function renderTranscript(text) {
+      if (!text) return '<div class="empty-section">No transcript available.</div>';
+      return text
+        .split("\n")
+        .map(line => {
+          const match = line.match(/^\[(\w+) \| (\d{2}:\d{2}:\d{2})\s*\]/);
+          if (match) {
+            const label = `[${match[1]} | ${match[2]}]`;
+            return line.replace(label, `<span class="speaker-label">${label}</span>`);
+          }
+          return line;
+        })
+        .join("\n");
+    }
+
+    async function load() {
+      const params = new URLSearchParams(window.location.search);
+      const meetingId = params.get("id");
+
+      if (!meetingId) {
+        document.getElementById("content").innerHTML = `
+          <div class="error">No meeting ID in URL. <a href="/dashboard" style="color:var(--accent)">Go back</a></div>`;
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API}/meetings/${meetingId}`);
+        if (!res.ok) throw new Error("Not found");
+        const r = await res.json();
+
+        document.title = `MeetMind — ${r.audio_filename}`;
+
+        const actionItems = r.action_items || [];
+        const decisions   = r.decisions || [];
+        const speakers    = r.speakers || [];
+
+        document.getElementById("content").innerHTML = `
+
+          <div class="report-header">
+            <div class="report-label">Meeting Report</div>
+            <div class="report-filename">${r.audio_filename}</div>
+            <div class="report-meta">
+              <div class="meta-item">🗓 <strong>${formatDate(r.processed_at)}</strong></div>
+              <div class="meta-item">🕐 <strong>${formatDuration(r.duration_seconds)}</strong></div>
+              <div class="meta-item">👥 <strong>${r.num_speakers} speaker${r.num_speakers !== 1 ? "s" : ""}</strong></div>
+              <div class="meta-item">⚡ <strong>${r.pipeline_duration_seconds?.toFixed(1) || "—"}s</strong> pipeline</div>
+            </div>
+          </div>
+
+          <!-- Summary -->
+          <div class="section">
+            <div class="section-title">Executive Summary</div>
+            <div class="summary-text">${r.summary || "No summary available."}</div>
+          </div>
+
+          <!-- Speakers -->
+          ${speakers.length ? `
+          <div class="section">
+            <div class="section-title">Speakers</div>
+            <div class="speakers-grid">
+              ${speakers.map(sp => `
+                <div class="speaker-card">
+                  <div class="speaker-name">${sp.display_name}</div>
+                  <div class="speaker-id">${sp.speaker_id}</div>
+                  ${sp.total_speaking_time ? `<div class="speaker-time">${sp.total_speaking_time}s speaking</div>` : ""}
+                </div>`).join("")}
+            </div>
+          </div>` : ""}
+
+          <!-- Action Items -->
+          <div class="section">
+            <div class="section-title">Action Items (${actionItems.length})</div>
+            ${actionItems.length === 0
+              ? '<div class="empty-section">No action items identified.</div>'
+              : `<div class="action-list">
+                  ${actionItems.map(item => `
+                    <div class="action-card">
+                      <div class="action-top">
+                        <div class="action-task">${item.task}</div>
+                        <span class="confidence-badge ${confidenceClass(item.confidence)}">${item.confidence}</span>
+                      </div>
+                      <div class="action-meta">
+                        <div>Owner: <strong>${item.owner}</strong></div>
+                        ${item.deadline ? `<div>Due: <strong>${item.deadline}</strong></div>` : ""}
+                      </div>
+                      ${item.source_quote ? `<div class="action-quote">"${item.source_quote}"</div>` : ""}
+                    </div>`).join("")}
+                </div>`}
+          </div>
+
+          <!-- Decisions -->
+          <div class="section">
+            <div class="section-title">Decisions Made (${decisions.length})</div>
+            ${decisions.length === 0
+              ? '<div class="empty-section">No explicit decisions identified.</div>'
+              : `<div class="decision-list">
+                  ${decisions.map(dec => `
+                    <div class="decision-card">
+                      <div class="decision-desc">${dec.description}</div>
+                      <div class="decision-meta">
+                        ${dec.made_by ? `<div>By: <strong>${dec.made_by}</strong></div>` : ""}
+                        ${dec.timestamp_approx ? `<div>At: <strong>${dec.timestamp_approx}</strong></div>` : ""}
+                      </div>
+                      ${dec.rationale ? `<div class="decision-rationale">Rationale: ${dec.rationale}</div>` : ""}
+                    </div>`).join("")}
+                </div>`}
+          </div>
+
+          <!-- Transcript -->
+          <div class="section">
+            <div class="section-title" style="display:flex;justify-content:space-between;align-items:center">
+              <span>Full Transcript</span>
+              <button class="copy-btn" onclick="copyMarkdown()">Copy Markdown</button>
+            </div>
+            <div class="transcript-box" id="transcriptBox">${renderTranscript(r.labelled_transcript)}</div>
+          </div>
+        `;
+
+        // Store markdown for copy
+        window._markdown = r.report_markdown;
+
+      } catch (err) {
+        document.getElementById("content").innerHTML = `
+          <div class="error">
+            <div style="font-size:32px;margin-bottom:16px">⚠️</div>
+            <div style="font-size:16px;color:var(--text);margin-bottom:8px">Report not found</div>
+            <div style="font-size:13px">
+              <a href="/dashboard" style="color:var(--accent)">← Back to dashboard</a>
+            </div>
+          </div>`;
+      }
+    }
+
+    function copyMarkdown() {
+      if (!window._markdown) return;
+      navigator.clipboard.writeText(window._markdown).then(() => {
+        const btn = document.querySelector(".copy-btn");
+        btn.textContent = "✓ Copied!";
+        setTimeout(() => btn.textContent = "Copy Markdown", 2000);
+      });
+    }
+
+    load();
+  </script>
+</body>
+</html>

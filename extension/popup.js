@@ -1,15 +1,9 @@
 /**
  * popup.js
  *
- * Handles the extension popup UI.
- * Sends messages to background.js — never touches tabCapture directly.
- *
- * States:
- *   idle       — ready to record
- *   recording  — capturing audio, timer running
- *   processing — pipeline running on server
- *   done       — report ready
- *   error      — something went wrong
+ * Pure display layer — reads state from background.js, sends commands.
+ * Closing the popup does NOT stop the recording.
+ * When reopened mid-recording, it re-syncs and resumes showing the timer.
  */
 
 const dot        = document.getElementById("dot");
@@ -18,58 +12,60 @@ const mainBtn    = document.getElementById("mainBtn");
 const viewBtn    = document.getElementById("viewBtn");
 const timerEl    = document.getElementById("timer");
 
-let timerInterval = null;
+let timerInterval  = null;
 let secondsElapsed = 0;
-let lastMeetingId = null;
+let lastMeetingId  = null;
 
 // ---------------------------------------------------------------------------
 // State management
 // ---------------------------------------------------------------------------
 
-function setState(state, message = "") {
+function setState(state, message = "", resumeSeconds = 0) {
   dot.className = `dot ${state}`;
 
   switch (state) {
     case "idle":
       statusText.textContent = "Ready to record";
-      mainBtn.textContent = "⏺ Start Recording";
-      mainBtn.className = "btn btn-record";
-      mainBtn.disabled = false;
+      mainBtn.textContent    = "⏺ Start Recording";
+      mainBtn.className      = "btn btn-record";
+      mainBtn.disabled       = false;
       timerEl.classList.remove("visible");
-      viewBtn.style.display = "none";
+      viewBtn.style.display  = "none";
       stopTimer();
       break;
 
     case "recording":
       statusText.textContent = "Recording in progress…";
-      mainBtn.textContent = "⏹ Stop Recording";
-      mainBtn.className = "btn btn-stop";
-      mainBtn.disabled = false;
+      mainBtn.textContent    = "⏹ Stop Recording";
+      mainBtn.className      = "btn btn-stop";
+      mainBtn.disabled       = false;
       timerEl.classList.add("visible");
-      startTimer();
+      // Resume from where we were if popup was reopened
+      startTimer(resumeSeconds);
       break;
 
     case "processing":
       statusText.textContent = message || "Running AI pipeline…";
-      mainBtn.textContent = "Processing…";
-      mainBtn.disabled = true;
+      mainBtn.textContent    = "Processing…";
+      mainBtn.disabled       = true;
       timerEl.classList.remove("visible");
       stopTimer();
       break;
 
     case "done":
       statusText.textContent = message || "Report ready!";
-      mainBtn.textContent = "⏺ Start New Recording";
-      mainBtn.className = "btn btn-record";
-      mainBtn.disabled = false;
-      viewBtn.style.display = lastMeetingId ? "block" : "none";
+      mainBtn.textContent    = "⏺ Start New Recording";
+      mainBtn.className      = "btn btn-record";
+      mainBtn.disabled       = false;
+      viewBtn.style.display  = lastMeetingId ? "block" : "none";
+      stopTimer();
       break;
 
     case "error":
       statusText.textContent = message || "Something went wrong.";
-      mainBtn.textContent = "⏺ Try Again";
-      mainBtn.className = "btn btn-record";
-      mainBtn.disabled = false;
+      mainBtn.textContent    = "⏺ Try Again";
+      mainBtn.className      = "btn btn-record";
+      mainBtn.disabled       = false;
       timerEl.classList.remove("visible");
       stopTimer();
       break;
@@ -80,8 +76,9 @@ function setState(state, message = "") {
 // Timer
 // ---------------------------------------------------------------------------
 
-function startTimer() {
-  secondsElapsed = 0;
+function startTimer(fromSeconds = 0) {
+  stopTimer();
+  secondsElapsed = fromSeconds;
   updateTimerDisplay();
   timerInterval = setInterval(() => {
     secondsElapsed++;
@@ -107,15 +104,13 @@ function updateTimerDisplay() {
 // ---------------------------------------------------------------------------
 
 mainBtn.addEventListener("click", async () => {
-  const response = await chrome.runtime.sendMessage({ type: "GET_STATE" });
+  const response     = await chrome.runtime.sendMessage({ type: "GET_STATE" });
   const currentState = response?.state || "idle";
 
   if (currentState === "recording") {
-    // Stop recording
     setState("processing", "Stopping and processing…");
     chrome.runtime.sendMessage({ type: "STOP_RECORDING" });
   } else {
-    // Start recording — get the active tab first
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
     if (!tab?.id) {
@@ -124,7 +119,7 @@ mainBtn.addEventListener("click", async () => {
     }
 
     const supportedUrls = ["meet.google.com", "zoom.us", "teams.microsoft.com"];
-    const isSupported = supportedUrls.some(url => tab.url?.includes(url));
+    const isSupported   = supportedUrls.some(url => tab.url?.includes(url));
 
     if (!isSupported) {
       setState("error", "Open a Google Meet, Zoom, or Teams tab first.");
@@ -149,7 +144,7 @@ viewBtn.addEventListener("click", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Listen for updates from background.js
+// Listen for live updates from background.js while popup is open
 // ---------------------------------------------------------------------------
 
 chrome.runtime.onMessage.addListener((message) => {
@@ -169,15 +164,27 @@ chrome.runtime.onMessage.addListener((message) => {
 });
 
 // ---------------------------------------------------------------------------
-// Sync state when popup opens
+// Sync state when popup opens — resumes correctly if recording is in progress
 // ---------------------------------------------------------------------------
 
 (async () => {
   const response = await chrome.runtime.sendMessage({ type: "GET_STATE" });
-  if (response?.state) {
+
+  if (response?.meetingId) {
+    lastMeetingId = response.meetingId;
+  }
+
+  if (response?.state === "recording") {
+    // Estimate elapsed time from session storage timestamp
+    const stored = await chrome.storage.session.get("meetmind_recording_start");
+    let elapsed = 0;
+    if (stored.meetmind_recording_start) {
+      elapsed = Math.floor((Date.now() - stored.meetmind_recording_start) / 1000);
+    }
+    setState("recording", "", elapsed);
+  } else if (response?.state) {
     setState(response.state, response.message);
     if (response.meetingId) {
-      lastMeetingId = response.meetingId;
       viewBtn.style.display = "block";
     }
   }
