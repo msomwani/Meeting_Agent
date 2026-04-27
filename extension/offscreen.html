@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>MeetMind Offscreen</title>
+</head>
+<body>
+  <!--
+    offscreen.html
+
+    This document exists solely to keep chrome.tabCapture alive for the
+    full duration of the meeting. Service workers shut down after ~30 seconds
+    of inactivity — this offscreen document does not, so audio capture
+    survives the entire call.
+
+    The actual logic lives in offscreen.js.
+    This file has no visible UI — it is never shown to the user.
+  -->
+  <script src="offscreen.js"></script>
+</body>
+</html>
