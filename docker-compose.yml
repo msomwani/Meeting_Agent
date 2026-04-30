@@ -1,0 +1,34 @@
+# docker-compose.yml
+# MeetMind — one command setup
+#
+# Usage:
+#   docker-compose up          # start server
+#   docker-compose up -d       # start in background
+#   docker-compose down        # stop server
+#   docker-compose logs -f     # view logs
+
+version: "3.9"
+
+services:
+  meetmind:
+    build: .
+    container_name: meetmind
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist the SQLite database across container restarts
+      - ./meetmind.db:/app/meetmind.db
+      # Persist downloaded model weights (saves re-downloading on restart)
+      - meetmind_models:/root/.cache/huggingface
+      - meetmind_whisper:/root/.cache/whisperx
+    env_file:
+      - .env
+    environment:
+      - DATABASE_PATH=/app/meetmind.db
+    restart: unless-stopped
+
+volumes:
+  meetmind_models:
+    driver: local
+  meetmind_whisper:
+    driver: local
