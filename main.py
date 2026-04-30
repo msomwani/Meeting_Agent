@@ -8,7 +8,7 @@ from typing import Annotated
 
 from fastapi import (
     FastAPI, UploadFile, File, WebSocket,
-    WebSocketDisconnect, Depends, HTTPException
+    WebSocketDisconnect, Depends, HTTPException, Body
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -25,16 +25,64 @@ from graph import run_pipeline
 
 load_dotenv()
 
+# Read model config from .env — set by start.py, defaults to "base"
+WHISPER_MODEL  = os.getenv("WHISPER_MODEL", "base")
+WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "cpu")
+
+# ---------------------------------------------------------------------------
+# Model catalogue — shown in dashboard settings panel
+# ---------------------------------------------------------------------------
+
+AVAILABLE_MODELS = {
+    "base": {
+        "label":           "Base (Fastest)",
+        "cpu_time":        "~2 min for a 3 min meeting",
+        "gpu_time":        "~20s for a 3 min meeting",
+        "accuracy":        "⭐⭐ — misses words, struggles with accents and fast speech",
+        "warning":         "Noticeable errors in real meetings — use small or higher if possible",
+        "ram_required_gb": 2,
+    },
+    "small": {
+        "label":           "Small (Balanced)",
+        "cpu_time":        "~6 min for a 3 min meeting",
+        "gpu_time":        "~45s for a 3 min meeting",
+        "accuracy":        "⭐⭐⭐ — decent accuracy, handles most accents",
+        "warning":         None,
+        "ram_required_gb": 4,
+    },
+    "medium": {
+        "label":           "Medium (Good)",
+        "cpu_time":        "~18 min for a 3 min meeting",
+        "gpu_time":        "~2 min for a 3 min meeting",
+        "accuracy":        "⭐⭐⭐⭐ — good accuracy, handles accents and crosstalk well",
+        "warning":         "Too slow on CPU — recommended only on Apple Silicon or NVIDIA GPU",
+        "ram_required_gb": 8,
+    },
+    "large-v2": {
+        "label":           "Large-v2 (Best Quality)",
+        "cpu_time":        "~45 min for a 3 min meeting",
+        "gpu_time":        "~3 min for a 3 min meeting",
+        "accuracy":        "⭐⭐⭐⭐⭐ — near-human accuracy, handles any accent or language",
+        "warning":         "Only use on NVIDIA GPU with 8GB+ VRAM — CPU will be extremely slow",
+        "ram_required_gb": 16,
+    },
+}
+
+# ---------------------------------------------------------------------------
+# Startup / shutdown
+# ---------------------------------------------------------------------------
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialise database on startup."""
     init_db()
-    print("MeetMind server started.")
+    print(f"MeetMind server started. Whisper model: {WHISPER_MODEL} on {WHISPER_DEVICE}")
     yield
     print("MeetMind server stopped.")
 
 
+# ---------------------------------------------------------------------------
+# App
+# ---------------------------------------------------------------------------
 
 app = FastAPI(
     title="MeetMind API",
@@ -45,7 +93,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],        # tightened in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -55,17 +103,20 @@ if os.path.exists("dashboard"):
     app.mount("/dashboard", StaticFiles(directory="dashboard", html=True), name="dashboard")
 
 
+# ---------------------------------------------------------------------------
+# Shared pipeline runner
+# ---------------------------------------------------------------------------
+
 async def process_audio_file(audio_path: str, filename: str, db: Session) -> dict:
     """
     Runs the full pipeline on an audio file and saves to database.
+    Runs in a thread pool so it doesn't block the FastAPI event loop.
     """
     def _run():
-        # Audio layer
-        asr_result = run_asr_pipeline(audio_path, model_size="base")
+        asr_result = run_asr_pipeline(audio_path, model_size=WHISPER_MODEL)
         dia_result = run_diarization_pipeline(audio_path)
         alignment  = run_alignment_pipeline(asr_result, dia_result)
 
-        # Build initial state
         state = {
             "audio_path":           audio_path,
             "audio_filename":       filename,
@@ -81,23 +132,28 @@ async def process_audio_file(audio_path: str, filename: str, db: Session) -> dic
             "final_report":         None,
         }
 
-        # LangGraph agent pipeline
         result = run_pipeline(state)
         report = result["final_report"]
-
-        # Save to database
         save_report(report, db)
-
         return get_report(report.meeting_id, db)
 
-    # Run blocking pipeline in thread pool
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, _run)
 
 
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+
 @app.get("/")
 async def health_check():
-    return {"status": "ok", "service": "MeetMind API", "version": "1.0.0"}
+    return {
+        "status":  "ok",
+        "service": "MeetMind API",
+        "version": "1.0.0",
+        "model":   WHISPER_MODEL,
+        "device":  WHISPER_DEVICE,
+    }
 
 
 @app.post("/upload")
@@ -105,11 +161,6 @@ async def upload_audio(
     file: Annotated[UploadFile, File(description="Audio file — WAV, M4A, MP3")],
     db: Session = Depends(get_db),
 ):
-    """
-    Upload an audio file and run the full pipeline.
-    Returns the complete meeting report as JSON.
-    """
-    # Validate file type
     allowed = {".wav", ".m4a", ".mp3", ".ogg", ".webm"}
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in allowed:
@@ -118,7 +169,6 @@ async def upload_audio(
             detail=f"Unsupported file type: {ext}. Allowed: {', '.join(allowed)}"
         )
 
-    # Save upload to a temp file
     with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
         content = await file.read()
         tmp.write(content)
@@ -138,19 +188,15 @@ async def upload_audio(
 
 @app.get("/meetings")
 async def list_meetings(db: Session = Depends(get_db)):
-    """
-    Returns all meetings ordered by most recent first.
-    Used by the dashboard history page.
-    """
     meetings = get_all_meetings(db)
     return [
         {
-            "meeting_id":       m.meeting_id,
-            "audio_filename":   m.audio_filename,
-            "processed_at":     m.processed_at.isoformat(),
-            "duration_seconds": m.duration_seconds,
-            "num_speakers":     m.num_speakers,
-            "summary_preview":  m.summary_preview,
+            "meeting_id":                m.meeting_id,
+            "audio_filename":            m.audio_filename,
+            "processed_at":              m.processed_at.isoformat(),
+            "duration_seconds":          m.duration_seconds,
+            "num_speakers":              m.num_speakers,
+            "summary_preview":           m.summary_preview,
             "pipeline_duration_seconds": m.pipeline_duration_seconds,
         }
         for m in meetings
@@ -159,10 +205,6 @@ async def list_meetings(db: Session = Depends(get_db)):
 
 @app.get("/meetings/{meeting_id}")
 async def fetch_report(meeting_id: str, db: Session = Depends(get_db)):
-    """
-    Returns the full report for a specific meeting.
-    Used by the dashboard report view page.
-    """
     result = get_report(meeting_id, db)
     if not result:
         raise HTTPException(status_code=404, detail=f"Meeting {meeting_id} not found")
@@ -171,7 +213,6 @@ async def fetch_report(meeting_id: str, db: Session = Depends(get_db)):
 
 @app.delete("/meetings/{meeting_id}")
 async def remove_meeting(meeting_id: str, db: Session = Depends(get_db)):
-    """Deletes a meeting and its report from the database."""
     deleted = delete_meeting(meeting_id, db)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Meeting {meeting_id} not found")
@@ -179,28 +220,76 @@ async def remove_meeting(meeting_id: str, db: Session = Depends(get_db)):
 
 
 # ---------------------------------------------------------------------------
+# Settings endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/settings")
+async def get_settings():
+    """Returns current model config and all available options."""
+    return {
+        "current_model":    WHISPER_MODEL,
+        "current_device":   WHISPER_DEVICE,
+        "available_models": AVAILABLE_MODELS,
+    }
+
+
+@app.post("/settings/model")
+async def update_model(model: str = Body(..., embed=True)):
+    """
+    Updates the Whisper model — takes effect on the next recording.
+    Saves to .env so it persists across server restarts.
+    """
+    global WHISPER_MODEL
+
+    if model not in AVAILABLE_MODELS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown model: {model}. Choose from: {list(AVAILABLE_MODELS.keys())}"
+        )
+
+    # Update .env file
+    env_path = ".env"
+    lines = []
+    if os.path.exists(env_path):
+        with open(env_path) as f:
+            lines = f.readlines()
+
+    key_found = False
+    new_lines = []
+    for line in lines:
+        if line.strip().startswith("WHISPER_MODEL="):
+            new_lines.append(f"WHISPER_MODEL={model}\n")
+            key_found = True
+        else:
+            new_lines.append(line)
+    if not key_found:
+        new_lines.append(f"WHISPER_MODEL={model}\n")
+
+    with open(env_path, "w") as f:
+        f.writelines(new_lines)
+
+    # Apply immediately without restart
+    WHISPER_MODEL = model
+    os.environ["WHISPER_MODEL"] = model
+
+    print(f"Settings: Whisper model updated to {model}")
+
+    return {
+        "updated_model": model,
+        "label":         AVAILABLE_MODELS[model]["label"],
+        "message":       f"Model updated to {AVAILABLE_MODELS[model]['label']}. Takes effect on next recording.",
+    }
+
+
+# ---------------------------------------------------------------------------
 # WebSocket — Chrome extension audio stream
 # ---------------------------------------------------------------------------
 
-# Active recording sessions: session_id → list of raw audio bytes chunks
 _sessions: dict[str, list[bytes]] = {}
 
 
 @app.websocket("/ws/audio")
 async def websocket_audio(websocket: WebSocket, db: Session = Depends(get_db)):
-    """
-    WebSocket endpoint for the Chrome extension.
-
-    Protocol:
-        1. Extension connects → server sends {"type": "ready", "session_id": "..."}
-        2. Extension sends raw audio chunks (bytes) continuously
-        3. Extension sends text message "STOP" when recording ends
-        4. Server assembles chunks → WAV file → runs pipeline → sends report JSON back
-        5. Connection closes
-
-    The offscreen.js in the Chrome extension streams audio chunks here
-    and sends "STOP" when the user clicks Stop in the popup.
-    """
     await websocket.accept()
 
     session_id = str(uuid.uuid4())
@@ -213,11 +302,9 @@ async def websocket_audio(websocket: WebSocket, db: Session = Depends(get_db)):
         while True:
             message = await websocket.receive()
 
-            # Binary audio chunk
             if "bytes" in message:
                 _sessions[session_id].append(message["bytes"])
 
-            # Text control message
             elif "text" in message:
                 text = message["text"].strip()
 
@@ -230,7 +317,6 @@ async def websocket_audio(websocket: WebSocket, db: Session = Depends(get_db)):
                         await websocket.send_json({"type": "error", "message": "No audio received"})
                         break
 
-                    # Assemble chunks into a WAV file
                     wav_path = await _save_chunks_as_wav(chunks, session_id)
 
                     try:
@@ -258,20 +344,13 @@ async def websocket_audio(websocket: WebSocket, db: Session = Depends(get_db)):
 
 
 async def _save_chunks_as_wav(chunks: list[bytes], session_id: str) -> str:
-    """
-    Assembles raw PCM audio chunks from the Chrome extension into a WAV file.
-
-    Chrome's tabCapture API delivers raw PCM audio at 48000Hz, mono, 16-bit.
-    These parameters match what the extension's offscreen.js will configure.
-    """
     wav_path = os.path.join(tempfile.gettempdir(), f"meetmind_{session_id}.wav")
-
     raw_audio = b"".join(chunks)
 
     with wave.open(wav_path, "wb") as wf:
-        wf.setnchannels(1)       # mono
-        wf.setsampwidth(2)       # 16-bit = 2 bytes
-        wf.setframerate(48000)   # Chrome tabCapture default sample rate
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(48000)
         wf.writeframes(raw_audio)
 
     size_kb = os.path.getsize(wav_path) // 1024

@@ -30,7 +30,6 @@
       min-height: 100vh;
     }
 
-    /* Grid background */
     body::before {
       content: '';
       position: fixed;
@@ -46,7 +45,6 @@
 
     .wrap { position: relative; z-index: 1; max-width: 900px; margin: 0 auto; padding: 0 24px; }
 
-    /* ── Nav ── */
     nav {
       border-bottom: 1px solid var(--border);
       background: rgba(8,12,20,0.9);
@@ -98,7 +96,6 @@
       border-radius: 4px;
     }
 
-    /* ── Hero ── */
     .hero {
       padding: 48px 0 32px;
       border-bottom: 1px solid var(--border);
@@ -130,12 +127,8 @@
       background-clip: text;
     }
 
-    .hero-sub {
-      font-size: 14px;
-      color: var(--muted);
-    }
+    .hero-sub { font-size: 14px; color: var(--muted); }
 
-    /* ── Stats row ── */
     .stats {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
@@ -157,13 +150,8 @@
       color: var(--text);
     }
 
-    .stat-label {
-      font-size: 12px;
-      color: var(--muted);
-      margin-top: 4px;
-    }
+    .stat-label { font-size: 12px; color: var(--muted); margin-top: 4px; }
 
-    /* ── Section header ── */
     .section-header {
       display: flex;
       align-items: center;
@@ -179,7 +167,6 @@
       text-transform: uppercase;
     }
 
-    /* ── Meeting cards ── */
     .meetings-list { display: flex; flex-direction: column; gap: 10px; }
 
     .meeting-card {
@@ -194,10 +181,7 @@
       animation: fadeUp 0.3s ease both;
     }
 
-    .meeting-card:hover {
-      border-color: var(--accent);
-      transform: translateY(-1px);
-    }
+    .meeting-card:hover { border-color: var(--accent); transform: translateY(-1px); }
 
     @keyframes fadeUp {
       from { opacity: 0; transform: translateY(8px); }
@@ -212,12 +196,7 @@
       margin-bottom: 10px;
     }
 
-    .card-filename {
-      font-size: 14px;
-      font-weight: 500;
-      color: var(--text);
-      word-break: break-word;
-    }
+    .card-filename { font-size: 14px; font-weight: 500; color: var(--text); word-break: break-word; }
 
     .card-date {
       font-family: 'IBM Plex Mono', monospace;
@@ -238,11 +217,7 @@
       overflow: hidden;
     }
 
-    .card-meta {
-      display: flex;
-      gap: 16px;
-      align-items: center;
-    }
+    .card-meta { display: flex; gap: 16px; align-items: center; }
 
     .meta-pill {
       font-family: 'IBM Plex Mono', monospace;
@@ -255,18 +230,11 @@
 
     .meta-pill span { color: var(--text); font-weight: 500; }
 
-    /* ── Empty state ── */
-    .empty {
-      text-align: center;
-      padding: 80px 0;
-      color: var(--muted);
-    }
-
+    .empty { text-align: center; padding: 80px 0; color: var(--muted); }
     .empty-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.4; }
     .empty-title { font-size: 16px; font-weight: 500; color: var(--text); margin-bottom: 8px; }
     .empty-sub { font-size: 13px; }
 
-    /* ── Loading ── */
     .loading {
       text-align: center;
       padding: 60px 0;
@@ -286,7 +254,64 @@
 
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* ── Footer ── */
+    /* ── Settings panel ── */
+    .model-card {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      padding: 14px 16px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: border-color 0.15s;
+      margin-bottom: 10px;
+    }
+
+    .model-card:hover { border-color: var(--accent); }
+    .model-card.selected { border-color: var(--accent); background: rgba(99,102,241,0.05); }
+
+    .model-card input[type="radio"] {
+      margin-top: 3px;
+      accent-color: var(--accent);
+      flex-shrink: 0;
+    }
+
+    .model-label { font-size: 14px; font-weight: 500; color: var(--text); margin-bottom: 4px; }
+    .model-accuracy { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+
+    .model-timing {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    .timing-item {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .timing-item span { color: var(--text); }
+    .model-warning { font-size: 11px; color: var(--amber); margin-top: 6px; }
+
+    .current-badge {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 10px;
+      color: var(--green);
+      background: rgba(34,197,94,0.1);
+      border: 1px solid rgba(34,197,94,0.2);
+      padding: 2px 7px;
+      border-radius: 4px;
+      margin-left: 8px;
+    }
+
+    .save-status {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      color: var(--green);
+      display: none;
+    }
+
     footer {
       border-top: 1px solid var(--border);
       margin-top: 60px;
@@ -347,6 +372,37 @@
         Loading meetings…
       </div>
     </div>
+
+    <!-- ── Model Settings ── -->
+    <div style="margin-top: 48px; margin-bottom: 32px;">
+      <div class="section-header">
+        <div class="section-title">Model Settings</div>
+        <div class="save-status" id="saveStatus">✓ Saved</div>
+      </div>
+
+      <div style="
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 20px;
+      ">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; flex-wrap:wrap; gap:8px;">
+          <div style="font-size:14px; font-weight:500; color:var(--text);">Whisper Transcription Model</div>
+          <div id="deviceBadge" style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--muted);"></div>
+        </div>
+        <div style="font-size:12px; color:var(--muted); margin-bottom:20px;">
+          Choose based on your hardware. Higher models need more time but produce significantly better transcripts.
+        </div>
+
+        <div id="modelList">
+          <div class="loading" style="padding:20px 0;">
+            <div class="spinner"></div>
+            Loading model options…
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <footer>
@@ -375,12 +431,13 @@
       return m > 0 ? `${m}m ${s}s` : `${s}s`;
     }
 
+    // ── Meetings list ──────────────────────────────────────────────────────
+
     async function load() {
       try {
-        const res = await fetch(`${API}/meetings`);
+        const res      = await fetch(`${API}/meetings`);
         const meetings = await res.json();
 
-        // Stats
         document.getElementById("totalMeetings").textContent = meetings.length;
         const totalSecs = meetings.reduce((a, m) => a + (m.duration_seconds || 0), 0);
         document.getElementById("totalHours").textContent = (totalSecs / 3600).toFixed(1) + "h";
@@ -427,7 +484,79 @@
       }
     }
 
+    // ── Settings panel ─────────────────────────────────────────────────────
+
+    async function loadSettings() {
+      try {
+        const res  = await fetch(`${API}/settings`);
+        const data = await res.json();
+
+        const current = data.current_model;
+        const device  = data.current_device;
+        const models  = data.available_models;
+
+        document.getElementById("deviceBadge").textContent =
+          `Running on: ${device.toUpperCase()}`;
+
+        const list = document.getElementById("modelList");
+        list.innerHTML = Object.entries(models).map(([key, m]) => `
+          <label class="model-card ${key === current ? 'selected' : ''}" id="card-${key}">
+            <input
+              type="radio"
+              name="model"
+              value="${key}"
+              ${key === current ? 'checked' : ''}
+              onchange="selectModel('${key}')"
+            />
+            <div style="flex:1;">
+              <div style="display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:5px;">
+                <span class="model-label">${m.label}</span>
+                ${key === current ? `<span class="current-badge">current</span>` : ''}
+              </div>
+              <div class="model-accuracy">${m.accuracy}</div>
+              <div class="model-timing">
+                <div class="timing-item">🖥 CPU: <span>${m.cpu_time}</span></div>
+                <div class="timing-item">⚡ GPU: <span>${m.gpu_time}</span></div>
+              </div>
+              ${m.warning ? `<div class="model-warning">⚠️ ${m.warning}</div>` : ''}
+            </div>
+          </label>
+        `).join('');
+
+      } catch (err) {
+        document.getElementById("modelList").innerHTML = `
+          <div style="font-size:13px; color:var(--muted); padding:12px 0;">
+            Cannot load settings — is the server running?
+          </div>`;
+      }
+    }
+
+    async function selectModel(model) {
+      try {
+        const res  = await fetch(`${API}/settings/model`, {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ model }),
+        });
+        const data = await res.json();
+
+        // Show saved flash
+        const status = document.getElementById("saveStatus");
+        status.textContent   = `✓ Switched to ${data.label}`;
+        status.style.display = "block";
+        setTimeout(() => { status.style.display = "none"; }, 3000);
+
+        // Refresh to update badges
+        loadSettings();
+
+      } catch (err) {
+        console.error("Failed to update model:", err);
+      }
+    }
+
+    // ── Init ───────────────────────────────────────────────────────────────
     load();
+    loadSettings();
   </script>
 </body>
 </html>
