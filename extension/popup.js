@@ -45,9 +45,10 @@ function setState(state, message = "", resumeSeconds = 0) {
       break;
 
     case "processing":
-      statusText.textContent = message || "Running AI pipeline…";
-      mainBtn.textContent    = "Processing…";
-      mainBtn.disabled       = true;
+      statusText.textContent = message || "Processing previous recording…";
+      mainBtn.textContent    = "⏺ Start New Recording";
+      mainBtn.className      = "btn btn-record";
+      mainBtn.disabled       = false;
       timerEl.classList.remove("visible");
       stopTimer();
       break;
@@ -126,6 +127,16 @@ mainBtn.addEventListener("click", async () => {
       return;
     }
 
+    // Pre-request mic from this visible popup context so Chrome stores the
+    // permission for the extension origin — the offscreen doc (invisible) can
+    // then access it without needing to show its own dialog.
+    try {
+      const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      micStream.getTracks().forEach(t => t.stop());
+    } catch (err) {
+      console.warn("MeetMind: mic permission not granted — will record tab audio only:", err.message);
+    }
+
     setState("recording");
     chrome.runtime.sendMessage({ type: "START_RECORDING", tabId: tab.id });
   }
@@ -149,6 +160,7 @@ viewBtn.addEventListener("click", () => {
 
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === "STATE_UPDATE") {
+    if (message.meetingId) lastMeetingId = message.meetingId;
     setState(message.state, message.message);
   }
 

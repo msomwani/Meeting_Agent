@@ -5,24 +5,24 @@
  * Popup is just a display — it reads state, sends commands, then can close.
  * Recording continues in offscreen.js regardless of popup being open or not.
  *
- * Key behaviours:
- *   - chrome.storage.session persists state across popup open/close cycles
- *   - Keep-alive ping every 20s prevents service worker shutdown mid-meeting
- *   - Recording start time saved so popup timer resumes correctly on reopen
+ * Auto-stop behaviour:
+ *   - If the recorded tab is closed → auto-stop and run pipeline
+ *   - If the recorded tab navigates away from Meet/Zoom/Teams → auto-stop
+ *   - User closing popup does NOT stop the recording
  */
 
-// In-memory state (fast access while service worker is alive)
 let currentState   = "idle";
 let currentMessage = "";
 let lastMeetingId  = null;
+let recordingTabId = null;      // track which tab we're recording
 
-// Keep service worker alive during recording
 let keepAliveInterval = null;
 
-const OFFSCREEN_URL = chrome.runtime.getURL("offscreen.html");
+const OFFSCREEN_URL  = chrome.runtime.getURL("offscreen.html");
+const SUPPORTED_URLS = ["meet.google.com", "zoom.us", "teams.microsoft.com"];
 
 // ---------------------------------------------------------------------------
-// State — written to session storage so popup can read on reopen
+// State — persisted to session storage so popup reads it on reopen
 // ---------------------------------------------------------------------------
 
 function updateState(state, message = "", meetingId = null) {
@@ -36,17 +36,31 @@ function updateState(state, message = "", meetingId = null) {
     meetmind_meetingId: meetingId || lastMeetingId || null,
   });
 
-  // Broadcast to popup if open — fails silently if closed
   chrome.runtime.sendMessage({
-    type:      "STATE_UPDATE",
-    state,
-    message,
-    meetingId: lastMeetingId,
+    type: "STATE_UPDATE", state, message, meetingId: lastMeetingId,
   }).catch(() => {});
 }
 
 // ---------------------------------------------------------------------------
-// Keep-alive — prevents Chrome killing service worker during long meetings
+// Auto-stop listeners
+// ---------------------------------------------------------------------------
+
+// Tab closed — stop recording if it's the tab we're capturing
+chrome.tabs.onRemoved.addListener((tabId) => {
+  if (tabId === recordingTabId && currentState === "recording") {
+    console.log("MeetMind: meeting tab closed — auto-stopping recording.");
+    updateState("processing", "Meeting ended — processing recording…");
+    handleStopRecording(/* autoStopped= */ true);
+  }
+});
+
+// NOTE: We intentionally do NOT listen to chrome.tabs.onUpdated for auto-stop.
+// During screen sharing the user frequently switches tabs — that should never
+// trigger a stop. Tab close (onRemoved above) is the only unambiguous signal
+// that a meeting has actually ended.
+
+// ---------------------------------------------------------------------------
+// Keep-alive
 // ---------------------------------------------------------------------------
 
 function startKeepAlive() {
@@ -54,14 +68,12 @@ function startKeepAlive() {
   keepAliveInterval = setInterval(() => {
     chrome.runtime.getPlatformInfo(() => {});
   }, 20000);
-  console.log("MeetMind: keep-alive started.");
 }
 
 function stopKeepAlive() {
   if (keepAliveInterval) {
     clearInterval(keepAliveInterval);
     keepAliveInterval = null;
-    console.log("MeetMind: keep-alive stopped.");
   }
 }
 
@@ -77,16 +89,12 @@ async function ensureOffscreenDocument() {
       reasons:       [chrome.offscreen.Reason.USER_MEDIA],
       justification: "Capture meeting tab audio via tabCapture API",
     });
-    console.log("MeetMind: offscreen document created.");
   }
 }
 
 async function closeOffscreenDocument() {
   const exists = await chrome.offscreen.hasDocument();
-  if (exists) {
-    await chrome.offscreen.closeDocument();
-    console.log("MeetMind: offscreen document closed.");
-  }
+  if (exists) await chrome.offscreen.closeDocument();
 }
 
 // ---------------------------------------------------------------------------
@@ -95,7 +103,6 @@ async function closeOffscreenDocument() {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
-  // Popup opened — return persisted state
   if (message.type === "GET_STATE") {
     chrome.storage.session.get(
       ["meetmind_state", "meetmind_message", "meetmind_meetingId"],
@@ -110,45 +117,43 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  // Popup: start recording
   if (message.type === "START_RECORDING") {
     handleStartRecording(message.tabId);
     sendResponse({ ok: true });
     return true;
   }
 
-  // Popup: stop recording
   if (message.type === "STOP_RECORDING") {
     handleStopRecording();
     sendResponse({ ok: true });
     return true;
   }
 
-  // Offscreen: pipeline running
   if (message.type === "PROCESSING") {
     updateState("processing", "Running AI pipeline…");
     return true;
   }
 
-  // Offscreen: report ready
   if (message.type === "REPORT_READY") {
     stopKeepAlive();
+    recordingTabId = null;
     const meetingId = message.meetingId;
+    // Check before updateState changes currentState
+    const newRecordingActive = currentState === "recording";
     updateState("done", "✅ Report ready!", meetingId);
-    chrome.runtime.sendMessage({
-      type: "REPORT_READY", meetingId,
-    }).catch(() => {});
-    closeOffscreenDocument();
+    chrome.runtime.sendMessage({ type: "REPORT_READY", meetingId }).catch(() => {});
+    if (!newRecordingActive) closeOffscreenDocument();
     return true;
   }
 
-  // Offscreen: error
   if (message.type === "ERROR") {
     stopKeepAlive();
+    recordingTabId = null;
     const msg = message.message || "Pipeline error.";
+    const newRecordingActive = currentState === "recording";
     updateState("error", msg);
     chrome.runtime.sendMessage({ type: "ERROR", message: msg }).catch(() => {});
-    closeOffscreenDocument();
+    if (!newRecordingActive) closeOffscreenDocument();
     return true;
   }
 });
@@ -159,10 +164,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function handleStartRecording(tabId) {
   try {
+    recordingTabId = tabId;   // remember which tab we're watching
     updateState("recording", "Recording in progress…");
     startKeepAlive();
 
-    // Save start time so popup timer can resume correctly on reopen
     chrome.storage.session.set({ meetmind_recording_start: Date.now() });
 
     await ensureOffscreenDocument();
@@ -180,16 +185,13 @@ async function handleStartRecording(tabId) {
       );
     });
 
-    await chrome.runtime.sendMessage({
-      type:     "START_CAPTURE",
-      streamId: streamId,
-    });
-
+    await chrome.runtime.sendMessage({ type: "START_CAPTURE", streamId });
     console.log("MeetMind: recording started for tab", tabId);
 
   } catch (err) {
     console.error("MeetMind: start recording error:", err);
     stopKeepAlive();
+    recordingTabId = null;
     chrome.storage.session.remove("meetmind_recording_start");
     updateState("error", `Failed to start: ${err.message}`);
     await closeOffscreenDocument();
@@ -200,11 +202,15 @@ async function handleStartRecording(tabId) {
 // Stop recording
 // ---------------------------------------------------------------------------
 
-async function handleStopRecording() {
-  console.log("MeetMind: stopping recording…");
+async function handleStopRecording(autoStopped = false) {
+  console.log(`MeetMind: stopping recording (auto: ${autoStopped})…`);
   chrome.storage.session.remove("meetmind_recording_start");
-  updateState("processing", "Processing recording…");
 
-  // Tell offscreen.js to stop — result comes back as REPORT_READY or ERROR
+  if (!autoStopped) {
+    // Manual stop — update state here
+    // Auto-stop already updated state before calling this
+    updateState("processing", "Processing recording…");
+  }
+
   await chrome.runtime.sendMessage({ type: "STOP_CAPTURE" }).catch(() => {});
 }
