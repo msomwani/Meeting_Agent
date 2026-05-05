@@ -1,11 +1,24 @@
-whisperx
-pyannote.audio
-langchain-core
-langgraph
-langfuse
-python-dotenv
-pydantic>=2.0
-fastapi
-uvicorn
-gradio
-langchain-groq
+whisperx                      # WhisperX ASR — faster Whisper + word-level alignment
+pyannote.audio==3.1.1         # Speaker diarization
+scipy                         # WAV file reading in diarize.py
+numpy                         # Array operations in diarize.py
+torch                         # PyTorch — required by WhisperX + pyannote
+torchaudio                    # Audio processing
+
+langgraph                     # Multi-agent graph framework
+langchain                     # Required by langfuse.langchain.CallbackHandler
+langchain-core                # Base LangChain abstractions
+langchain-groq                # Groq LLM integration
+langfuse                      # LLM observability — traces all agent node calls
+
+fastapi                       # REST + WebSocket server
+uvicorn[standard]             # ASGI server — [standard] includes websockets support
+python-multipart              # Required for FastAPI file uploads
+httpx                         # Async HTTP client — used by FastAPI TestClient
+
+sqlalchemy                    # ORM for SQLite
+
+pydantic>=2.0                 # Validates all LLM outputs — prevents silent failures
+
+python-dotenv                 # Loads .env file
+psutil                        # RAM detection in start.py

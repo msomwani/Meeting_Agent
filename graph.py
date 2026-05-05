@@ -63,16 +63,12 @@ def _get_langfuse_handler():
         return None
 
     try:
-        from langfuse.callback import CallbackHandler
-        handler = CallbackHandler(
-            public_key=public_key,
-            secret_key=secret_key,
-            host=host,
-        )
+        from langfuse.langchain import CallbackHandler  # Langfuse v4 — reads env vars automatically
+        handler = CallbackHandler()
         print("Langfuse: callback handler initialised.")
         return handler
     except ImportError:
-        print("Langfuse: package not installed — pip install langfuse")
+        print("Langfuse: package not installed — pip install langfuse langchain")
         return None
 
 
