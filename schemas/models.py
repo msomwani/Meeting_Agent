@@ -43,36 +43,36 @@ class MeetingReport(BaseModel):
 
     def to_markdown(self)->str:
         lines=[
-            f"Meeting Report",
-            f"**Date:**{self.processed_at.strftime('%Y-%m-%d %H:%M:%S')}",
-            f"**File:**{self.audio_filename}",
-            f"**Speakers:**{', '.join(s.display_name for s in self.speakers)}",
+            f"# Meeting Report",
+            f"**Date:** {self.processed_at.strftime('%Y-%m-%d %H:%M:%S')}",
+            f"**File:** {self.audio_filename}",
+            f"**Speakers:** {', '.join(s.display_name for s in self.speakers)}",
             "",
-            "##Summary",
+            "## Summary",
             self.summary,
             "",
-            "##Action Items",
+            "## Action Items",
         ]
 
         if not self.action_items:
-            lines.append("Not action items identified.")
+            lines.append("No action items identified.")
 
         else:
             for i,item in enumerate(self.action_items,1):
-                deadline=f" -due: {item.deadline}" if item.deadline else ""
+                deadline=f" — due: {item.deadline}" if item.deadline else ""
                 lines.append(f"{i}. **{item.owner}**: {item.task}{deadline}")
                 if item.source_quote:
-                    lines.append(f'   >"{item.source_quote}"')
-        lines+=["","#Decisions Made"]
+                    lines.append(f'   > "{item.source_quote}"')
+        lines+=["","## Decisions Made"]
 
         if not self.decision:
-            lines.append("No explicit decsion identified")
+            lines.append("No explicit decisions identified.")
         else:
             for i,dec in enumerate(self.decision,1):
                 by = f" *by {dec.made_by}*" if dec.made_by else ""
                 lines.append(f"{i}. {dec.description}{by}")
 
-        lines+=["","##Full Transcript","---",self.labelled_transcript]
+        lines+=["","## Full Transcript","---",self.labelled_transcript]
 
         return "\n".join(lines)
                

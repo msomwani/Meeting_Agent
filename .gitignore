@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 outputs/
 audio/
+recordings/
 .DS_Store
 .venv/
 meetmind.db

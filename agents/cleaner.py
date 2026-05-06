@@ -1,5 +1,4 @@
-from langchain_core.messages import HumanMessage,SystemMessage
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import HumanMessage, SystemMessage
 from llm import llm
 from schemas.state import MeetingState
 
@@ -38,11 +37,6 @@ TRANSCRIPT:
  
 Return only the cleaned transcript. No preamble, no explanation."""
  
-prompt = ChatPromptTemplate.from_messages([
-    SystemMessage(content=SYSTEM_PROMPT),
-    HumanMessage(content=HUMAN_PROMPT)
-])
-
 def clean_transcript(state:MeetingState)->MeetingState:
     """
     Cleans the raw transcript using the cleaner agent.

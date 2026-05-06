@@ -9,7 +9,7 @@ langgraph                     # Multi-agent graph framework
 langchain                     # Required by langfuse.langchain.CallbackHandler
 langchain-core                # Base LangChain abstractions
 langchain-groq                # Groq LLM integration
-langfuse                      # LLM observability — traces all agent node calls
+langfuse>=3.0                 # LLM observability — traces all agent node calls (v3+ API required)
 
 fastapi                       # REST + WebSocket server
 uvicorn[standard]             # ASGI server — [standard] includes websockets support
