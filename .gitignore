@@ -8,3 +8,6 @@ recordings/
 .venv/
 meetmind.db
 test_*.py
+MASTER_PLAN.md
+MEMORY/
+.claude/
