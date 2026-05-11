@@ -106,7 +106,8 @@ def get_device() -> tuple[str, str]:
 
         if torch.backends.mps.is_available():
             chip = platform.processor() or "Apple Silicon"
-            return "mps", f"{chip} (Apple MPS)"
+            # ctranslate2 (WhisperX backend) does not support MPS — use cpu
+            return "cpu", f"{chip} (Apple Silicon — WhisperX runs on CPU)"
 
     except ImportError:
         pass

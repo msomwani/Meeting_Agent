@@ -1,7 +1,7 @@
 whisperx                      # WhisperX ASR — faster Whisper + word-level alignment
 pyannote.audio==3.1.1         # Speaker diarization
 scipy                         # WAV file reading in diarize.py
-numpy                         # Array operations in diarize.py
+numpy                         # array operations in diarize.py
 torch                         # PyTorch — required by WhisperX + pyannote
 torchaudio                    # Audio processing
 

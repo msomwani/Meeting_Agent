@@ -16,9 +16,9 @@ def load_whisper_model(model_size: str = "base", device: str = "cpu"):
         "large-v2" — most accurate
 
     device options:
-        "cpu"  — works everywhere, slower
+        "cpu"  — works everywhere, including Apple Silicon
         "cuda" — needs an NVIDIA GPU, much faster
-        "mps"  — Apple Silicon Mac, faster than cpu
+        Note: MPS is NOT supported by ctranslate2 — always use cpu on Apple Silicon
     """
     print(f"Loading Whisper Model: {model_size} on {device}")
     model = whisperx.load_model(
@@ -74,11 +74,9 @@ def run_asr_pipeline(
     """
     import torch
 
-    # Detect device
+    # Detect device — ctranslate2 (WhisperX backend) only supports cuda or cpu
     if torch.cuda.is_available():
         device = "cuda"
-    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-        device = "mps"
     else:
         device = "cpu"
 

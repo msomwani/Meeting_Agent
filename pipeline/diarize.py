@@ -1,4 +1,6 @@
 import os
+import subprocess
+import tempfile
 import numpy as np
 import torch
 import scipy.io.wavfile as wavfile
@@ -42,6 +44,19 @@ def get_speaker_durations(segments: list[dict]) -> dict[str, float]:
 
     return {k: round(v, 1) for k, v in durations.items()}
 
+def _to_wav(audio_path: str) -> tuple[str, bool]:
+    """Return (wav_path, was_converted). Converts non-WAV via ffmpeg."""
+    if audio_path.lower().endswith(".wav"):
+        return audio_path, False
+    tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    tmp.close()
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", audio_path, "-ar", "16000", "-ac", "1", tmp.name],
+        capture_output=True, check=True
+    )
+    return tmp.name, True
+
+
 def diarize_audio(
     audio_path:str,
     pipeline:Pipeline,
@@ -65,15 +80,20 @@ def diarize_audio(
             kwargs["max_speakers"] = max_speakers
 
 
-    sample_rate, data = wavfile.read(audio_path)
-    if data.ndim == 1:
-        data = data[np.newaxis, :]
-    else:
-        data = data.T
-    if data.dtype != np.float32:
-        data = data.astype(np.float32) / np.iinfo(data.dtype).max
-    audio_input = {"waveform": torch.from_numpy(data), "sample_rate": sample_rate}
-    diarization_result = pipeline(audio_input, **kwargs)
+    wav_path, converted = _to_wav(audio_path)
+    try:
+        sample_rate, data = wavfile.read(wav_path)
+        if data.ndim == 1:
+            data = data[np.newaxis, :]
+        else:
+            data = data.T
+        if data.dtype != np.float32:
+            data = data.astype(np.float32) / np.iinfo(data.dtype).max
+        audio_input = {"waveform": torch.from_numpy(data), "sample_rate": sample_rate}
+        diarization_result = pipeline(audio_input, **kwargs)
+    finally:
+        if converted:
+            os.unlink(wav_path)
     
     segments=[]
     annotation = diarization_result.speaker_diarization if hasattr(diarization_result, "speaker_diarization") else diarization_result
