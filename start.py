@@ -20,6 +20,7 @@ import sys
 import platform
 import subprocess
 import shutil
+from dotenv import load_dotenv
 
 # ---------------------------------------------------------------------------
 # Model definitions — timing estimates for a 3-minute meeting
@@ -286,7 +287,18 @@ def start_server():
 # ---------------------------------------------------------------------------
 
 def main():
+    load_dotenv()
+
     banner()
+
+    # V2 cloud mode — skip local model selection entirely
+    if os.getenv("USE_LOCAL_MODELS", "true").lower() != "true":
+        print(f"{CYAN}{BOLD}  ☁  Version 2 — Cloud Mode{RESET}")
+        print(f"  {DIM}Transcription : Groq Whisper API (whisper-large-v3){RESET}")
+        print(f"  {DIM}Diarization   : AssemblyAI{RESET}")
+        print(f"  {DIM}No local models loaded.{RESET}\n")
+        start_server()
+        return
 
     # Detect hardware
     ram_gb = get_ram_gb()
