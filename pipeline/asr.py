@@ -1,9 +1,12 @@
-import whisperx
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
+_USE_LOCAL = os.getenv("USE_LOCAL_MODELS", "true").lower() == "true"
+
+
+# ── Local helpers (WhisperX) ──────────────────────────────────────────────────
 
 def load_whisper_model(model_size: str = "base", device: str = "cpu"):
     """
@@ -20,6 +23,7 @@ def load_whisper_model(model_size: str = "base", device: str = "cpu"):
         "cuda" — needs an NVIDIA GPU, much faster
         Note: MPS is NOT supported by ctranslate2 — always use cpu on Apple Silicon
     """
+    import whisperx
     print(f"Loading Whisper Model: {model_size} on {device}")
     model = whisperx.load_model(
         model_size,
@@ -38,6 +42,7 @@ def audio_transcribe(audio_path: str, model) -> dict:
         - segments: list of {text, start, end}
         - language: detected language code e.g. "en"
     """
+    import whisperx
     if not os.path.exists(audio_path):
         raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
@@ -52,29 +57,15 @@ def audio_transcribe(audio_path: str, model) -> dict:
     return result
 
 
-
 def get_transcript_text(segments: list) -> str:
     """Flatten all segments into a single plain text string."""
     return " ".join(segment["text"].strip() for segment in segments)
 
 
-def run_asr_pipeline(
-    audio_path: str,
-    model_size: str = "base",
-    preloaded_model=None
-) -> dict:
-    """
-    Full ASR pipeline.
-
-    Args:
-        audio_path:       Path to audio file
-        model_size:       Whisper model size — used only if preloaded_model is None
-        preloaded_model:  Already-loaded WhisperX model instance from main.py startup.
-                          If provided, skips model loading (faster first recording).
-    """
+def _run_asr_local(audio_path: str, model_size: str, preloaded_model) -> dict:
     import torch
+    import whisperx
 
-    # Detect device — ctranslate2 (WhisperX backend) only supports cuda or cpu
     if torch.cuda.is_available():
         device = "cuda"
     else:
@@ -82,18 +73,12 @@ def run_asr_pipeline(
 
     print(f"Using device: {device}")
 
-    # Use pre-loaded model if available, otherwise load fresh
-    if preloaded_model is not None:
-        print(f"Using pre-loaded Whisper model.")
-        model = preloaded_model
-    else:
-        model = load_whisper_model(model_size=model_size, device=device)
+    model = preloaded_model if preloaded_model is not None else load_whisper_model(
+        model_size=model_size, device=device
+    )
 
-    # Transcribe
     result = audio_transcribe(audio_path, model)
 
-    # Align to word level
-    # Note: alignment model always runs on cpu — MPS not supported
     align_model, metadata = whisperx.load_align_model(
         language_code=result["language"],
         device="cpu"
@@ -108,7 +93,6 @@ def run_asr_pipeline(
         return_char_alignments=False
     )
 
-    # Calculate duration from last segment
     duration = 0.0
     if result_aligned["segments"]:
         duration = result_aligned["segments"][-1]["end"]
@@ -117,5 +101,71 @@ def run_asr_pipeline(
         "segments": result_aligned["segments"],
         "language": result["language"],
         "raw_text": get_transcript_text(result_aligned["segments"]),
-        "duration": duration
+        "duration": duration,
     }
+
+
+# ── Cloud helper (Groq Whisper API) ──────────────────────────────────────────
+
+def _run_asr_cloud(audio_path: str) -> dict:
+    from groq import Groq
+
+    if not os.path.exists(audio_path):
+        raise FileNotFoundError(f"Audio file not found: {audio_path}")
+
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        raise ValueError("GROQ_API_KEY not set in environment")
+
+    print(f"Transcribing via Groq Whisper API: {audio_path}")
+
+    client = Groq(api_key=api_key)
+    with open(audio_path, "rb") as f:
+        transcription = client.audio.transcriptions.create(
+            file=f,
+            model="whisper-large-v3",
+            response_format="verbose_json",
+            timestamp_granularities=["segment"],
+        )
+
+    raw_segments = transcription.segments or []
+    segments = [
+        {"text": seg.text, "start": seg.start, "end": seg.end}
+        for seg in raw_segments
+    ]
+
+    raw_text = " ".join(seg["text"].strip() for seg in segments)
+    duration = segments[-1]["end"] if segments else 0.0
+
+    print(f"Groq transcription complete. Language: {transcription.language}, "
+          f"Segments: {len(segments)}")
+
+    return {
+        "segments": segments,
+        "language": transcription.language or "en",
+        "raw_text": raw_text,
+        "duration": duration,
+    }
+
+
+# ── Public entry point ────────────────────────────────────────────────────────
+
+def run_asr_pipeline(
+    audio_path: str,
+    model_size: str = "base",
+    preloaded_model=None
+) -> dict:
+    """
+    Full ASR pipeline. Branches on USE_LOCAL_MODELS env var.
+
+    Args:
+        audio_path:       Path to audio file
+        model_size:       Whisper model size — V1 only (ignored in cloud mode)
+        preloaded_model:  Already-loaded WhisperX model — V1 only
+    """
+    use_local = os.getenv("USE_LOCAL_MODELS", "true").lower() == "true"
+
+    if use_local:
+        return _run_asr_local(audio_path, model_size, preloaded_model)
+    else:
+        return _run_asr_cloud(audio_path)
