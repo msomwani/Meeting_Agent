@@ -50,7 +50,8 @@ def load_diarization_pipeline():
 
 def _to_wav(audio_path: str) -> tuple[str, bool]:
     """Return (wav_path, was_converted). Converts non-WAV via ffmpeg."""
-    import subprocess, tempfile
+    import subprocess
+    import tempfile
     if audio_path.lower().endswith(".wav"):
         return audio_path, False
     tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
@@ -144,10 +145,10 @@ def _run_diarization_cloud(audio_path: str, num_speakers: int = None) -> dict:
 
     aai.settings.api_key = api_key
 
-    config = aai.TranscriptionConfig(
-        speaker_labels=True,
-        **({"speakers_expected": num_speakers} if num_speakers else {}),
-    )
+    config_kwargs = {"speaker_labels": True}
+    if num_speakers:
+        config_kwargs["speakers_expected"] = num_speakers
+    config = aai.TranscriptionConfig(**config_kwargs)
 
     print(f"Running AssemblyAI diarization on: {audio_path}")
     transcriber = aai.Transcriber()
@@ -167,11 +168,12 @@ def _run_diarization_cloud(audio_path: str, num_speakers: int = None) -> dict:
     ]
     segments.sort(key=lambda x: x["start"])
 
-    print(f"AssemblyAI diarization complete. Found {count_speakers(segments)} speakers.")
+    num_speakers_found = count_speakers(segments)
+    print(f"AssemblyAI diarization complete. Found {num_speakers_found} speakers.")
 
     return {
         "segments": segments,
-        "num_speakers": count_speakers(segments),
+        "num_speakers": num_speakers_found,
         "speaker_durations": get_speaker_durations(segments),
     }
 

@@ -3,8 +3,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-_USE_LOCAL = os.getenv("USE_LOCAL_MODELS", "true").lower() == "true"
-
 
 # ── Local helpers (WhisperX) ──────────────────────────────────────────────────
 
@@ -134,7 +132,6 @@ def _run_asr_cloud(audio_path: str) -> dict:
         for seg in raw_segments
     ]
 
-    raw_text = " ".join(seg["text"].strip() for seg in segments)
     duration = segments[-1]["end"] if segments else 0.0
 
     print(f"Groq transcription complete. Language: {transcription.language}, "
@@ -143,7 +140,7 @@ def _run_asr_cloud(audio_path: str) -> dict:
     return {
         "segments": segments,
         "language": transcription.language or "en",
-        "raw_text": raw_text,
+        "raw_text": get_transcript_text(segments),
         "duration": duration,
     }
 
