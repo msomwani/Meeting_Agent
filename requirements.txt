@@ -1,9 +1,14 @@
+# ── Version 1 only (local models) — not required for Version 2 ──────────────
 whisperx                      # WhisperX ASR — faster Whisper + word-level alignment
 pyannote.audio==3.1.1         # Speaker diarization
 scipy                         # WAV file reading in diarize.py
 numpy                         # array operations in diarize.py
 torch                         # PyTorch — required by WhisperX + pyannote
 torchaudio                    # Audio processing
+
+# ── Version 2 only (cloud APIs) ──────────────────────────────────────────────
+groq                          # Groq SDK — Whisper API transcription (whisper-large-v3)
+assemblyai                    # AssemblyAI SDK — speaker diarization
 
 langgraph                     # Multi-agent graph framework
 langchain                     # Required by langfuse.langchain.CallbackHandler
